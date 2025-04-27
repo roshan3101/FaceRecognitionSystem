@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from db import get_user_embeddings_collection
 from face_utils import base64_to_image, generate_embedding, compare_embeddings
 import os
@@ -6,7 +6,11 @@ from flask_cors import CORS
 from bson import ObjectId
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 @app.route('/register', methods=['POST'])
 def register():
