@@ -141,6 +141,9 @@ def verify():
         
         if(stored_user['isFaceRegistered'] == False):
             return jsonify({'error': 'User face not registered'}), 404
+            
+        if 'embeddings' not in stored_user or not stored_user['embeddings']:
+            return jsonify({'error': 'No face embeddings found for this user'}), 404
         
         try:
             # Convert base64 to image
