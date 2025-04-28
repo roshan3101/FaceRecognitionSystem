@@ -61,11 +61,13 @@ def register():
         
         # Generate embeddings for all images
         embeddings = []
+        embeddings_count = 0
         for base64_image in face_images_base64:
             try:
                 image = base64_to_image(base64_image)
                 embedding = generate_embedding(image)
                 embeddings.append(embedding)
+                embeddings_count += 1
                 
                 # Clean up memory aggressively
                 del image
@@ -100,7 +102,7 @@ def register():
         
         return jsonify({
             'message': 'Faces registered successfully',
-            'count': len(embeddings)
+            'count': embeddings_count
         }), 200
         
     except Exception as e:
