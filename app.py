@@ -5,6 +5,7 @@ import os
 from flask_cors import CORS
 from bson import ObjectId
 import logging
+import gc
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -45,19 +46,23 @@ def register():
         if not isinstance(face_images_base64, list):
             return jsonify({'error': 'face_images must be an array of base64 strings'}), 400
             
-        if len(face_images_base64) > 15:
-            return jsonify({'error': 'Maximum 15 images allowed per user'}), 400
+        if len(face_images_base64) > 5:  # Reduced from 15 to 5 to save memory
+            return jsonify({'error': 'Maximum 5 images allowed per user'}), 400
         
         # Generate embeddings for all images
         embeddings = []
         for base64_image in face_images_base64:
-            # Remove the data URL prefix if present
-            if ',' in base64_image:
-                base64_image = base64_image.split(',')[1]
-            
-            image = base64_to_image(base64_image)
-            embedding = generate_embedding(image)
-            embeddings.append(embedding)
+            try:
+                image = base64_to_image(base64_image)
+                embedding = generate_embedding(image)
+                embeddings.append(embedding)
+                
+                # Clean up memory after each image
+                del image
+                gc.collect()
+            except Exception as e:
+                logger.error(f"Error processing image: {str(e)}")
+                return jsonify({'error': f'Error processing image: {str(e)}'}), 500
         
         # Convert string ID to ObjectId
         try:
@@ -70,20 +75,23 @@ def register():
         result = collection.update_one(
             {'_id': user_object_id},
             {'$set': {'embeddings': embeddings}},
-            upsert=False  # Don't create new document if not found
+            upsert=False
         )
         
         if result.matched_count == 0:
             return jsonify({'error': 'User not found'}), 404
+        
+        # Clean up memory
+        del embeddings
+        gc.collect()
         
         return jsonify({
             'message': 'Faces registered successfully',
             'count': len(embeddings)
         }), 200
         
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
     except Exception as e:
+        logger.error(f"Registration error: {str(e)}")
         return jsonify({'error': f'Registration failed: {str(e)}'}), 500
 
 @app.route('/verify', methods=['POST'])
@@ -97,10 +105,6 @@ def verify():
         user_id = ObjectId(data['user_id'])
         face_image_base64 = data['face_image']
         
-        # Remove the data URL prefix if present
-        if ',' in face_image_base64:
-            face_image_base64 = face_image_base64.split(',')[1]
-        
         # Get stored embeddings
         collection = get_user_embeddings_collection()
         stored_user = collection.find_one({'_id': user_id})
@@ -108,33 +112,42 @@ def verify():
         if not stored_user:
             return jsonify({'error': 'User not found'}), 404
         
-        # Convert base64 to image
-        image = base64_to_image(face_image_base64)
-        
-        # Generate new embedding
-        new_embedding = generate_embedding(image)
-        
-        # Compare with all stored embeddings and get the best match
-        best_similarity = 0
-        for stored_embedding in stored_user['embeddings']:
-            is_verified, similarity = compare_embeddings(
-                stored_embedding,
-                new_embedding
-            )
-            if similarity > best_similarity:
-                best_similarity = similarity
-        
-        # Consider verified if any of the stored embeddings matches above threshold
-        is_verified = best_similarity > 0.7
-        
-        return jsonify({
-            'verified': is_verified,
-            'similarity': best_similarity
-        }), 200
-        
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        try:
+            # Convert base64 to image
+            image = base64_to_image(face_image_base64)
+            
+            # Generate new embedding
+            new_embedding = generate_embedding(image)
+            
+            # Compare with all stored embeddings and get the best match
+            best_similarity = 0
+            for stored_embedding in stored_user['embeddings']:
+                is_verified, similarity = compare_embeddings(
+                    stored_embedding,
+                    new_embedding
+                )
+                if similarity > best_similarity:
+                    best_similarity = similarity
+            
+            # Clean up memory
+            del image
+            del new_embedding
+            gc.collect()
+            
+            # Consider verified if any of the stored embeddings matches above threshold
+            is_verified = best_similarity > 0.6  # Adjusted threshold for VGG-Face
+            
+            return jsonify({
+                'verified': is_verified,
+                'similarity': float(best_similarity)  # Convert numpy float to Python float
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Verification processing error: {str(e)}")
+            return jsonify({'error': f'Error processing verification: {str(e)}'}), 500
+            
     except Exception as e:
+        logger.error(f"Verification error: {str(e)}")
         return jsonify({'error': f'Verification failed: {str(e)}'}), 500
 
 if __name__ == '__main__':
