@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .preview-container {
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .preview-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        .thumbnail {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            margin: 5px;
+            border-radius: 4px;
+        }
+        .result-container {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <h1 class="text-center mb-4">Face Recognition System</h1>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Register New User</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="registerForm">
+                            <div class="mb-3">
+                                <label for="userId" class="form-label">User ID</label>
+                                <input type="text" class="form-control" id="userId" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Upload Face Images</label>
+                                <input type="file" class="form-control" id="registerImages" accept="image/*" multiple required>
+                                <small class="text-muted">You can select multiple images</small>
+                            </div>
+                            <div id="registerPreviews" class="mb-3"></div>
+                            <button type="submit" class="btn btn-success">Register User</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Verify User</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="verifyForm">
+                            <div class="mb-3">
+                                <label for="verifyUserId" class="form-label">User ID</label>
+                                <input type="text" class="form-control" id="verifyUserId" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Upload Face Image</label>
+                                <input type="file" class="form-control" id="verifyImage" accept="image/*" required>
+                            </div>
+                            <div id="verifyPreview" class="mb-3"></div>
+                            <button type="submit" class="btn btn-primary">Verify User</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Processing...</p>
+        </div>
+
+        <div class="result-container" id="resultContainer" style="display: none;">
+            <h4>Result</h4>
+            <div id="resultContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Register form handling
+        const registerImages = document.getElementById('registerImages');
+        const registerPreviews = document.getElementById('registerPreviews');
+        const verifyImage = document.getElementById('verifyImage');
+        const verifyPreview = document.getElementById('verifyPreview');
+
+        // Handle multiple image uploads for registration
+        registerImages.addEventListener('change', function() {
+            registerPreviews.innerHTML = '';
+            const files = this.files;
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const img = document.createElement('img');
+                        img.src = e.target.result;
+                        img.className = 'thumbnail';
+                        registerPreviews.appendChild(img);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+
+        // Handle single image upload for verification
+        verifyImage.addEventListener('change', function() {
+            verifyPreview.innerHTML = '';
+            const file = this.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.className = 'preview-image';
+                    verifyPreview.appendChild(img);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const files = registerImages.files;
+            if (files.length === 0) {
+                alert('Please select at least one image');
+                return;
+            }
+
+            const userId = document.getElementById('userId').value;
+            showLoading();
+
+            try {
+                const imagePromises = Array.from(files).map(file => {
+                    return new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsDataURL(file);
+                    });
+                });
+
+                const imageDataUrls = await Promise.all(imagePromises);
+
+                const response = await fetch('https://facerecognitionsystem-993g.onrender.com/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        face_images: imageDataUrls
+                    })
+                });
+
+                const result = await response.json();
+                showResult(result);
+            } catch (error) {
+                showResult({ error: 'Registration failed: ' + error.message });
+            } finally {
+                hideLoading();
+            }
+        });
+
+        document.getElementById('verifyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = verifyImage.files[0];
+            if (!file) {
+                alert('Please select an image');
+                return;
+            }
+
+            const userId = document.getElementById('verifyUserId').value;
+            showLoading();
+
+            try {
+                const imageDataUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+
+                const response = await fetch('https://facerecognitionsystem-993g.onrender.com/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        face_image: imageDataUrl
+                    })
+                });
+
+                const result = await response.json();
+                showResult(result);
+            } catch (error) {
+                showResult({ error: 'Verification failed: ' + error.message });
+            } finally {
+                hideLoading();
+            }
+        });
+
+        function showLoading() {
+            document.querySelector('.loading').style.display = 'block';
+            document.getElementById('resultContainer').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.querySelector('.loading').style.display = 'none';
+        }
+
+        function showResult(result) {
+            const resultContainer = document.getElementById('resultContainer');
+            const resultContent = document.getElementById('resultContent');
+            
+            if (result.error) {
+                resultContent.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+            } else if (result.verified !== undefined) {
+                const status = result.verified ? 'success' : 'danger';
+                const message = result.verified ? 'User verified successfully!' : 'Verification failed';
+                resultContent.innerHTML = `
+                    <div class="alert alert-${status}">
+                        ${message}<br>
+                        Similarity: ${(result.similarity * 100).toFixed(2)}%
+                    </div>
+                `;
+            } else {
+                resultContent.innerHTML = `
+                    <div class="alert alert-success">
+                        ${result.message}<br>
+                        Images registered: ${result.count}
+                    </div>
+                `;
+            }
+            
+            resultContainer.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 
