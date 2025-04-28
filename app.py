@@ -95,6 +95,18 @@ def register():
         if result.matched_count == 0:
             return jsonify({'error': 'User not found'}), 404
         
+        if(result.matched_count > 0):
+            try:
+                collection.update_one(
+                    {'_id': user_object_id},
+                    {'$set': {'isFaceRegistered': True}},
+                    upsert=False
+                )
+
+            except Exception as e:
+                logger.error(f"Error updating user: {str(e)}")
+                return jsonify({'error': f'Error updating user: {str(e)}'}), 500
+        
         # Clean up memory
         del embeddings
         gc.collect()
@@ -126,6 +138,9 @@ def verify():
         
         if not stored_user:
             return jsonify({'error': 'User not found'}), 404
+        
+        if(stored_user['isFaceRegistered'] == False):
+            return jsonify({'error': 'User face not registered'}), 404
         
         try:
             # Convert base64 to image
