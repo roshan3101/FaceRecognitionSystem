@@ -6,10 +6,20 @@ from flask_cors import CORS
 from bson import ObjectId
 import logging
 import gc
+import tensorflow as tf
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Configure TensorFlow memory growth
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        logger.warning(f"GPU memory growth configuration failed: {e}")
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -46,8 +56,8 @@ def register():
         if not isinstance(face_images_base64, list):
             return jsonify({'error': 'face_images must be an array of base64 strings'}), 400
             
-        if len(face_images_base64) > 5:  # Reduced from 15 to 5 to save memory
-            return jsonify({'error': 'Maximum 5 images allowed per user'}), 400
+        if len(face_images_base64) > 3:  # Further reduced to 3 images
+            return jsonify({'error': 'Maximum 3 images allowed per user'}), 400
         
         # Generate embeddings for all images
         embeddings = []
@@ -57,9 +67,11 @@ def register():
                 embedding = generate_embedding(image)
                 embeddings.append(embedding)
                 
-                # Clean up memory after each image
+                # Clean up memory aggressively
                 del image
+                del embedding
                 gc.collect()
+                tf.keras.backend.clear_session()
             except Exception as e:
                 logger.error(f"Error processing image: {str(e)}")
                 return jsonify({'error': f'Error processing image: {str(e)}'}), 500
@@ -84,6 +96,7 @@ def register():
         # Clean up memory
         del embeddings
         gc.collect()
+        tf.keras.backend.clear_session()
         
         return jsonify({
             'message': 'Faces registered successfully',
@@ -133,13 +146,14 @@ def verify():
             del image
             del new_embedding
             gc.collect()
+            tf.keras.backend.clear_session()
             
             # Consider verified if any of the stored embeddings matches above threshold
-            is_verified = best_similarity > 0.6  # Adjusted threshold for VGG-Face
+            is_verified = best_similarity > 0.5  # Adjusted threshold for OpenFace
             
             return jsonify({
                 'verified': is_verified,
-                'similarity': float(best_similarity)  # Convert numpy float to Python float
+                'similarity': float(best_similarity)
             }), 200
             
         except Exception as e:
